@@ -36,7 +36,7 @@ services:
   pipeline:
     build: .
     container_name: scope_pipeline
-    command: python src/pipeline.py
+    command: python src/pipeline/pipeline.py
     volumes:
       - .:/app
     environment:
