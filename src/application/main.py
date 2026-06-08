@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from src.application.routers import companies, snapshots, uploads
+from src.application.routers import companies, pipeline_runs, snapshots, uploads
 
 app = FastAPI(
     title="Corporate Credit Rating API",
@@ -11,6 +11,7 @@ app = FastAPI(
 app.include_router(companies.router)
 app.include_router(snapshots.router)
 app.include_router(uploads.router)
+app.include_router(pipeline_runs.router)
 
 
 @app.get("/health", tags=["health"])

@@ -9,3 +9,4 @@ python-dotenv==1.0.1
 pydantic_settings
 alembic==1.13.2
 pytest==8.2.2
+certifi==2024.8.30

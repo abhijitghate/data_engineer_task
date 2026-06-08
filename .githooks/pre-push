@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+VENV_PYTHON="$REPO_ROOT/.venv/bin/python"
+
+if [ ! -x "$VENV_PYTHON" ]; then
+  echo "pre-push: .venv not found. Create it first (python -m venv .venv)." >&2
+  exit 1
+fi
+
+echo "pre-push: running test suite..."
+cd "$REPO_ROOT"
+"$VENV_PYTHON" -m pytest -q tests/unit tests/integration

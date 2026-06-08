@@ -1,4 +1,5 @@
 from datetime import date
+import json
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -107,3 +108,30 @@ class QueryService:
                 detail=f"Upload file not found at path: {file_path}",
             )
         return file_path
+
+    def list_pipeline_runs(self) -> list[dict]:
+        return self.repository.list_pipeline_runs()
+
+    def get_pipeline_run(self, run_id: int) -> dict:
+        run = self.repository.get_pipeline_run(run_id)
+        if run is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pipeline run {run_id} not found",
+            )
+        return run
+
+    def get_pipeline_run_quality(self, run_id: int) -> dict:
+        run = self.get_pipeline_run(run_id)
+        files = self.repository.list_processed_files_for_run(run_id)
+
+        quality_report_path = Path("reports") / f"quality_run_{run_id}.json"
+        artifact = None
+        if quality_report_path.exists() and quality_report_path.is_file():
+            artifact = json.loads(quality_report_path.read_text(encoding="utf-8"))
+
+        return {
+            "run": run,
+            "files": files,
+            "artifact": artifact,
+        }

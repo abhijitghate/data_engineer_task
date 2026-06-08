@@ -126,6 +126,8 @@ v_upload_stats = table(
 )
 
 upload_logs = models.UploadLog.__table__
+pipeline_runs = models.PipelineRun.__table__
+processed_files = models.ProcessedFile.__table__
 
 
 class ReadRepository:
@@ -346,3 +348,25 @@ class ReadRepository:
         if row is None or row.get("storage_path") is None:
             return None
         return Path(row["storage_path"])
+
+    def list_pipeline_runs(self) -> list[dict]:
+        stmt = select(pipeline_runs).order_by(
+            pipeline_runs.c.started_at.desc(),
+            pipeline_runs.c.run_id.desc(),
+        )
+        return self._fetch_all(stmt)
+
+    def get_pipeline_run(self, run_id: int) -> dict | None:
+        stmt = select(pipeline_runs).where(pipeline_runs.c.run_id == run_id)
+        return self._fetch_one(stmt)
+
+    def list_processed_files_for_run(self, run_id: int) -> list[dict]:
+        stmt = (
+            select(processed_files)
+            .where(processed_files.c.run_id == run_id)
+            .order_by(
+                processed_files.c.processed_at.desc(),
+                processed_files.c.processed_file_id.desc(),
+            )
+        )
+        return self._fetch_all(stmt)
