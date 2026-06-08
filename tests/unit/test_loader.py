@@ -7,7 +7,7 @@ from src.pipeline import loader
 
 def test_invalidate_latest_snapshot_sets_valid_to():
     db = MagicMock()
-    snapshot = SimpleNamespace(valid_to=None)
+    snapshot = SimpleNamespace(snapshot_id=42, valid_to=None)
     chain = db.query.return_value.join.return_value.filter.return_value.order_by.return_value
     chain.first.return_value = snapshot
     closed_at = datetime.now(timezone.utc)
