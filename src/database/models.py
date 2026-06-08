@@ -89,7 +89,7 @@ class Company(Base):
     __tablename__ = "dimension_companies"
     __table_args__ = {"schema": "warehouse"}
 
-    company_surrogate_key = Column(Integer, primary_key=True, index=True)
+    company_version_id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, nullable=False, index=True)
     company_name = Column(String, nullable=False)
     sector_id = Column(
@@ -132,9 +132,9 @@ class CompanySnapshot(Base):
 
     snapshot_id = Column(Integer, primary_key=True, index=True)
     upload_id = Column(Integer, ForeignKey("warehouse.upload_logs.upload_id"), nullable=False)
-    company_surrogate_key = Column(
+    company_version_id = Column(
         Integer,
-        ForeignKey("warehouse.dimension_companies.company_surrogate_key"),
+        ForeignKey("warehouse.dimension_companies.company_version_id"),
         nullable=False,
     )
     ingested_at = Column(

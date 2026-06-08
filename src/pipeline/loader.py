@@ -72,7 +72,7 @@ def _upsert_company_current(
         current = models.Company(**company_payload)
         db.add(current)
         db.flush()
-        return current.company_surrogate_key
+        return current.company_version_id
 
     unchanged = (
         current.company_name == company_payload["company_name"]
@@ -83,7 +83,7 @@ def _upsert_company_current(
         and current.end_of_business_month == company_payload["end_of_business_month"]
     )
     if unchanged:
-        return current.company_surrogate_key
+        return current.company_version_id
 
     now = datetime.now(timezone.utc)
     current.is_current = False
@@ -92,7 +92,7 @@ def _upsert_company_current(
     new_company = models.Company(**company_payload)
     db.add(new_company)
     db.flush()
-    return new_company.company_surrogate_key
+    return new_company.company_version_id
 
 
 def _insert_snapshot(db: Session, snapshot_payload: dict) -> int:
@@ -116,7 +116,7 @@ def _resolve_or_allocate_company_id(db: Session, company_name: str) -> int:
     historical_company = (
         db.query(models.Company)
         .filter(models.Company.company_name == company_name)
-        .order_by(models.Company.company_surrogate_key.desc())
+        .order_by(models.Company.company_version_id.desc())
         .first()
     )
     if historical_company:
@@ -190,18 +190,18 @@ def load_db_ready_data(
             "rating_methodology_ids": rating_methodology_ids,
             "industry_risk_type_ids": industry_risk_type_ids,
             "upload_id": upload_id,
-            "company_surrogate_key": 0,
+            "company_version_id": 0,
             "snapshot_id": 0,
         }
 
         company_insert_payload = build_insert_ready_data(
             db_ready_data, resolved_for_company
         )["company"]
-        company_surrogate_key = _upsert_company_current(db, company_insert_payload)
+        company_version_id = _upsert_company_current(db, company_insert_payload)
 
         resolved_for_snapshot: ResolvedReferences = {
             **resolved_for_company,
-            "company_surrogate_key": company_surrogate_key,
+            "company_version_id": company_version_id,
         }
         snapshot_insert_payload = build_insert_ready_data(
             db_ready_data, resolved_for_snapshot
@@ -238,6 +238,6 @@ def load_db_ready_data(
     return {
         "upload_id": upload_id,
         "company_id": company_id,
-        "company_surrogate_key": company_surrogate_key,
+        "company_version_id": company_version_id,
         "snapshot_id": snapshot_id,
     }

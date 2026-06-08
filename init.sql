@@ -45,7 +45,7 @@ CREATE TABLE warehouse.dimension_industry_risk_types (
 
 CREATE TABLE warehouse.dimension_companies (
     company_id INT NOT NULL,
-    company_surrogate_key SERIAL PRIMARY KEY,
+    company_version_id SERIAL PRIMARY KEY,
     company_name VARCHAR(255) NOT NULL,
 
     sector_id INT NOT NULL,
@@ -76,7 +76,7 @@ CREATE UNIQUE INDEX uq_dimension_companies_current
 CREATE TABLE warehouse.fact_company_snapshots (
     snapshot_id SERIAL PRIMARY KEY,
     upload_id INT NOT NULL,
-    company_surrogate_key INT NOT NULL,
+    company_version_id INT NOT NULL,
 
     ingested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     snapshot_status VARCHAR(50) DEFAULT 'success' NOT NULL,
@@ -105,8 +105,8 @@ CREATE TABLE warehouse.fact_company_snapshots (
 
     CONSTRAINT fk_snapshot_upload FOREIGN KEY (upload_id)
         REFERENCES warehouse.upload_logs(upload_id),
-    CONSTRAINT fk_snapshot_company FOREIGN KEY (company_surrogate_key)
-        REFERENCES warehouse.dimension_companies(company_surrogate_key),
+    CONSTRAINT fk_snapshot_company FOREIGN KEY (company_version_id)
+        REFERENCES warehouse.dimension_companies(company_version_id),
     CONSTRAINT fk_snapshot_segmentation FOREIGN KEY (segmentation_criteria_id)
         REFERENCES warehouse.dimension_segmentation_criteria(segmentation_criteria_id)
 );
@@ -177,7 +177,7 @@ CREATE TABLE warehouse.fact_scope_credit_metrics (
 CREATE INDEX idx_snapshots_upload_id
     ON warehouse.fact_company_snapshots(upload_id);
 CREATE INDEX idx_snapshots_company_key
-    ON warehouse.fact_company_snapshots(company_surrogate_key);
+    ON warehouse.fact_company_snapshots(company_version_id);
 CREATE INDEX idx_snapshots_valid_window
     ON warehouse.fact_company_snapshots(valid_from, valid_to);
 

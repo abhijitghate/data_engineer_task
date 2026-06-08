@@ -97,7 +97,7 @@ class ResolvedReferences(TypedDict):
 
     # IDs produced by inserts earlier in the same transaction.
     upload_id: int
-    company_surrogate_key: int
+    company_version_id: int
     snapshot_id: int
 
 
@@ -113,7 +113,7 @@ class CompanyInsertPayload(TypedDict):
 
 class SnapshotInsertPayload(TypedDict):
     upload_id: int
-    company_surrogate_key: int
+    company_version_id: int
     snapshot_status: str
     segmentation_criteria_id: int
     business_risk_profile: str
@@ -357,7 +357,7 @@ def build_insert_ready_data(
         ),
         snapshot=SnapshotInsertPayload(
             upload_id=resolved_references["upload_id"],
-            company_surrogate_key=resolved_references["company_surrogate_key"],
+            company_version_id=resolved_references["company_version_id"],
             snapshot_status=db_ready_data["snapshot"]["snapshot_status"],
             segmentation_criteria_id=resolved_references["segmentation_criteria_id"],
             business_risk_profile=db_ready_data["snapshot"]["business_risk_profile"],
