@@ -16,7 +16,10 @@ def parse_excel_master(file_path: str) -> dict:
         dict: Extracted values from the MASTER sheet.
     """
     try:
-        LOGGER.info("Reading excel MASTER sheet from %s", file_path)
+        LOGGER.info(
+            "parser_read_master_sheet",
+            extra={"event": "parser_read_master_sheet"},
+        )
         df = pd.read_excel(file_path, sheet_name="MASTER", header=None)
 
         def is_filled(value) -> bool:
@@ -242,10 +245,23 @@ def parse_excel_master(file_path: str) -> dict:
                     })
                 raw_data["scope_credit_metrics"] = credit_metrics
 
-        LOGGER.debug("Parsed raw data keys: %s", sorted(raw_data.keys()))
+        LOGGER.debug(
+            "parser_extracted_fields",
+            extra={
+                "event": "parser_extracted_fields",
+                "field_count": len(raw_data.keys()),
+                "fields": sorted(raw_data.keys()),
+            },
+        )
         return raw_data
     except Exception as e:
-        LOGGER.exception("Error while parsing %s", file_path)
+        LOGGER.exception("parser_failed", extra={"event": "parser_failed"})
         _, _, tb = sys.exc_info()
-        LOGGER.error("Parser failure line number: %s", tb.tb_lineno if tb else "unknown")
+        LOGGER.error(
+            "parser_failure_location",
+            extra={
+                "event": "parser_failure_location",
+                "line_number": tb.tb_lineno if tb else "unknown",
+            },
+        )
         raise Exception(e)

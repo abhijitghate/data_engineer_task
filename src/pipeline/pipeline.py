@@ -12,6 +12,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.database import models
 from src.database.database import SessionLocal
 from src.pipeline.loader import load_db_ready_data
+from src.pipeline.logging_utils import (
+    clear_log_context,
+    configure_logging,
+    set_log_context,
+)
 from src.pipeline.parser import parse_excel_master
 from src.pipeline.transformer import transform_to_db_ready
 from src.pipeline.validator import DataQualityReport, validate_data
@@ -257,11 +262,14 @@ def _run_ingestion_with_retry(
                 raise
             sleep_seconds = base_backoff_seconds * (2 ** (attempt - 1))
             LOGGER.warning(
-                "Retrying file %s after error (attempt %d/%d): %s",
-                file_path,
-                attempt,
-                max_retries,
-                error,
+                "retrying_ingestion",
+                extra={
+                    "event": "retrying_ingestion",
+                    "attempt": attempt,
+                    "max_retries": max_retries,
+                    "error": str(error),
+                    "backoff_seconds": sleep_seconds,
+                },
             )
             time.sleep(sleep_seconds)
 
@@ -304,15 +312,23 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    )
+    configure_logging()
     args = _build_parser().parse_args()
     files_to_load = args.files or DEFAULT_INPUT_FILES
     run_started = time.perf_counter()
     run_id = _create_pipeline_run(
         files_total=len(files_to_load), discussion_version=args.version
+    )
+    set_log_context(run_id=run_id)
+    LOGGER.info(
+        "pipeline_run_started",
+        extra={
+            "event": "pipeline_run_started",
+            "discussion_version": args.version,
+            "files_total": len(files_to_load),
+            "max_retries": args.max_retries,
+            "backoff_seconds": args.backoff_seconds,
+        },
     )
 
     files_processed = 0
@@ -333,6 +349,7 @@ if __name__ == "__main__":
         checksum = ""
         try:
             checksum = _compute_sha256(file_path)
+            set_log_context(run_id=run_id, file_path=file_path, file_checksum=checksum)
             existing = _find_already_processed_file(
                 file_checksum=checksum,
                 discussion_version=args.version,
@@ -354,7 +371,10 @@ if __name__ == "__main__":
                         "Skipped because checksum + discussion_version already processed."
                     ),
                 )
-                LOGGER.info("Skipped incremental file: %s", file_path)
+                LOGGER.info(
+                    "file_skipped_incremental",
+                    extra={"event": "file_skipped_incremental"},
+                )
                 quality_file_reports.append(
                     {
                         "file_path": file_path,
@@ -405,7 +425,25 @@ if __name__ == "__main__":
                 company_version_id=result.get("company_version_id"),
                 snapshot_id=result.get("snapshot_id"),
             )
-            LOGGER.info("Loaded file %s with status %s", file_path, row_status)
+            LOGGER.info(
+                "file_processed",
+                extra={
+                    "event": "file_processed",
+                    "status": row_status,
+                    "upload_id": result.get("upload_id"),
+                    "company_id": result.get("company_id"),
+                    "company_version_id": result.get("company_version_id"),
+                    "snapshot_id": result.get("snapshot_id"),
+                    "quality_completeness_rate": quality_report["completeness_rate"],
+                    "quality_validity_rate": quality_report["validity_rate"],
+                    "quality_warning_count": quality_report["warning_count"],
+                    "extract_ms": timings["extract_ms"],
+                    "validate_ms": timings["validate_ms"],
+                    "transform_ms": timings["transform_ms"],
+                    "load_ms": timings["load_ms"],
+                    "total_ms": timings["total_ms"],
+                },
+            )
             quality_file_reports.append(
                 {
                     "file_path": file_path,
@@ -439,7 +477,10 @@ if __name__ == "__main__":
                     "error": str(error),
                 }
             )
-            LOGGER.exception("Failed to process file %s", file_path)
+            LOGGER.exception(
+                "file_failed",
+                extra={"event": "file_failed", "error": str(error)},
+            )
         finally:
             _update_pipeline_run_progress(
                 run_id=run_id,
@@ -448,6 +489,7 @@ if __name__ == "__main__":
                 files_failed=files_failed,
                 files_skipped=files_skipped,
             )
+            clear_log_context()
 
     quality_completeness_avg = (
         round(sum(quality_completeness_values) / len(quality_completeness_values), 4)
@@ -492,21 +534,45 @@ if __name__ == "__main__":
         "files": quality_file_reports,
     }
     artifact_path = _write_quality_artifact(run_id=run_id, report=quality_artifact)
-    LOGGER.info("Wrote quality artifact to %s", artifact_path)
+    set_log_context(run_id=run_id)
+    LOGGER.info(
+        "quality_artifact_written",
+        extra={"event": "quality_artifact_written", "artifact_path": str(artifact_path)},
+    )
 
     if files_failed == 0:
         LOGGER.info(
-            "Pipeline run %s finished successfully. processed=%d succeeded=%d skipped=%d",
-            run_id,
-            files_processed,
-            files_succeeded,
-            files_skipped,
+            "pipeline_run_finished",
+            extra={
+                "event": "pipeline_run_finished",
+                "status": "success",
+                "files_processed": files_processed,
+                "files_succeeded": files_succeeded,
+                "files_failed": files_failed,
+                "files_skipped": files_skipped,
+                "duration_ms": run_duration_ms,
+                "extract_ms_total": extract_ms_total,
+                "validate_ms_total": validate_ms_total,
+                "transform_ms_total": transform_ms_total,
+                "load_ms_total": load_ms_total,
+                "quality_completeness_avg": quality_completeness_avg,
+                "quality_validity_avg": quality_validity_avg,
+                "quality_warning_count": quality_warning_count,
+            },
         )
     else:
         LOGGER.error(
-            "Pipeline run %s failed. processed=%d failed=%d",
-            run_id,
-            files_processed,
-            files_failed,
+            "pipeline_run_finished",
+            extra={
+                "event": "pipeline_run_finished",
+                "status": "failed",
+                "files_processed": files_processed,
+                "files_succeeded": files_succeeded,
+                "files_failed": files_failed,
+                "files_skipped": files_skipped,
+                "duration_ms": run_duration_ms,
+                "error_summary": " | ".join(failures)[:1900],
+            },
         )
         raise SystemExit(1)
+    clear_log_context()

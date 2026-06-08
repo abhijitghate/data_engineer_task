@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 from typing import Type
 
 from sqlalchemy import func
@@ -10,6 +11,8 @@ from src.pipeline.transformer import (
     ResolvedReferences,
     build_insert_ready_data,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _get_upload_by_checksum(db: Session, file_checksum: str) -> models.UploadLog | None:
@@ -51,6 +54,15 @@ def _invalidate_latest_snapshot_for_company(
         return
 
     latest_snapshot.valid_to = closed_at
+    LOGGER.info(
+        "snapshot_invalidated",
+        extra={
+            "event": "snapshot_invalidated",
+            "company_id": company_id,
+            "snapshot_id": latest_snapshot.snapshot_id,
+            "closed_at": closed_at.isoformat(),
+        },
+    )
 
 
 def _get_or_create_dimension(
@@ -185,6 +197,15 @@ def load_db_ready_data(
                         == existing_snapshot.company_version_id
                     )
                     .first()
+                )
+                LOGGER.info(
+                    "idempotent_upload_detected",
+                    extra={
+                        "event": "idempotent_upload_detected",
+                        "upload_id": existing_upload.upload_id,
+                        "snapshot_id": existing_snapshot.snapshot_id,
+                        "company_version_id": existing_snapshot.company_version_id,
+                    },
                 )
                 return {
                     "upload_id": existing_upload.upload_id,
