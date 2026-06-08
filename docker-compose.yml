@@ -75,5 +75,21 @@ services:
       api:
         condition: service_healthy
 
+  test:
+    build: .
+    command: pytest -q tests/integration_db
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - PYTHONPATH=/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    profiles:
+      - test
+
 volumes:
   pgdata:
