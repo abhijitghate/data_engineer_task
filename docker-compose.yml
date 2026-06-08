@@ -1,7 +1,6 @@
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: scope_postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -18,7 +17,6 @@ services:
 
   migrate:
     build: .
-    container_name: scope_migrate
     command: alembic upgrade head
     volumes:
       - .:/app
@@ -31,7 +29,6 @@ services:
 
   api:
     build: .
-    container_name: scope_api
     command: uvicorn src.application.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
@@ -60,7 +57,6 @@ services:
 
   pipeline:
     build: .
-    container_name: scope_pipeline
     command: sh -c "python -m src.pipeline.pipeline ${PIPELINE_ARGS:-}"
     volumes:
       - .:/app
