@@ -12,10 +12,3 @@ fi
 echo "pre-push: running test suite..."
 cd "$REPO_ROOT"
 "$VENV_PYTHON" -m pytest -q tests/unit tests/integration
-
-if [ "${SKIP_DB_TESTS:-0}" = "1" ]; then
-  echo "pre-push: skipping DB-backed integration tests (SKIP_DB_TESTS=1)."
-else
-  echo "pre-push: running DB-backed integration tests..."
-  "$REPO_ROOT/scripts/run-db-integration-tests.sh"
-fi

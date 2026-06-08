@@ -1,10 +1,14 @@
-import os
 from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
+
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", 
-        "postgresql://scope_admin:supersecretpassword@localhost:5432/scope_ratings"
+    DATABASE_URL: str
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
+
 
 settings = Settings()
