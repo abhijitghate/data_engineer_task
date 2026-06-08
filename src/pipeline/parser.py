@@ -1,6 +1,9 @@
 
 import pandas as pd
 import sys
+import logging
+
+LOGGER = logging.getLogger(__name__)
 
 
 def parse_excel_master(file_path: str) -> dict:
@@ -13,7 +16,7 @@ def parse_excel_master(file_path: str) -> dict:
         dict: Extracted values from the MASTER sheet.
     """
     try:
-        print(f"reading excel sheet...{file_path}")
+        LOGGER.info("Reading excel MASTER sheet from %s", file_path)
         df = pd.read_excel(file_path, sheet_name="MASTER", header=None)
 
         def is_filled(value) -> bool:
@@ -239,14 +242,10 @@ def parse_excel_master(file_path: str) -> dict:
                     })
                 raw_data["scope_credit_metrics"] = credit_metrics
 
-        import pprint
-
-        print("-" * 40)
-        pprint.pprint(raw_data)
-        print("-" * 40)
+        LOGGER.debug("Parsed raw data keys: %s", sorted(raw_data.keys()))
         return raw_data
     except Exception as e:
-        print(f"Error:{e}")
+        LOGGER.exception("Error while parsing %s", file_path)
         _, _, tb = sys.exc_info()
-        print(tb.tb_lineno)
+        LOGGER.error("Parser failure line number: %s", tb.tb_lineno if tb else "unknown")
         raise Exception(e)

@@ -1,8 +1,29 @@
 import hashlib
 import math
-from typing import Any
+from typing import Any, TypedDict
 
 import src.database.schemas as schema
+
+
+class DataQualityReport(TypedDict):
+    completeness_rate: float
+    validity_rate: float
+    warning_count: int
+    missing_required_fields: list[str]
+    invalid_metric_values: int
+    total_metric_values: int
+    warnings: list[str]
+
+
+REQUIRED_FIELDS = [
+    "company_name",
+    "corporate_sector",
+    "reporting_currency",
+    "country_of_origin",
+    "accounting_principles",
+    "end_of_business_month",
+    "segmentation_criteria",
+]
 
 
 def _is_missing(value: Any) -> bool:
@@ -50,12 +71,59 @@ def _metric_with_status(value: Any) -> tuple[float | None, schema.MetricStatus]:
         return None, "invalid"
 
 
-def validate_data(data: dict, version: str, file_path: str) -> schema.IngestionSchema:
+def _build_quality_report(
+    raw_data: dict,
+    metric_statuses: list[schema.MetricStatus],
+    industry_weights: list[float],
+) -> DataQualityReport:
+    missing_required_fields = [
+        field_name for field_name in REQUIRED_FIELDS if _is_missing(raw_data.get(field_name))
+    ]
+    present_required = len(REQUIRED_FIELDS) - len(missing_required_fields)
+    completeness_rate = (
+        present_required / len(REQUIRED_FIELDS) if REQUIRED_FIELDS else 1.0
+    )
+
+    invalid_metric_values = sum(1 for status in metric_statuses if status == "invalid")
+    total_metric_values = len(metric_statuses)
+    validity_rate = (
+        (total_metric_values - invalid_metric_values) / total_metric_values
+        if total_metric_values > 0
+        else 1.0
+    )
+
+    warnings: list[str] = []
+    if missing_required_fields:
+        warnings.append(
+            "Missing required fields: " + ", ".join(sorted(missing_required_fields))
+        )
+    if industry_weights:
+        total_weight = sum(industry_weights)
+        if not math.isclose(total_weight, 1.0, rel_tol=1e-3, abs_tol=1e-3):
+            warnings.append(
+                f"Industry weights sum is {total_weight:.4f} (expected 1.0000)."
+            )
+
+    return DataQualityReport(
+        completeness_rate=round(completeness_rate, 4),
+        validity_rate=round(validity_rate, 4),
+        warning_count=len(warnings),
+        missing_required_fields=missing_required_fields,
+        invalid_metric_values=invalid_metric_values,
+        total_metric_values=total_metric_values,
+        warnings=warnings,
+    )
+
+
+def validate_data(
+    data: dict, version: str, file_path: str
+) -> tuple[schema.IngestionSchema, DataQualityReport]:
     try:
         file_name = file_path.split("/")[-1]
         file_checksum = _compute_sha256(file_path)
 
         scope_credit_metrics = []
+        metric_statuses: list[schema.MetricStatus] = []
         for metric in data.get("scope_credit_metrics", []):
             ebitda_interest_cover, ebitda_interest_cover_status = _metric_with_status(
                 metric.get("scope_adjusted_ebitda_interest_cover")
@@ -73,6 +141,16 @@ def validate_data(data: dict, version: str, file_path: str) -> schema.IngestionS
                 metric.get("scope_adjusted_focf_debt")
             )
             liquidity, liquidity_status = _metric_with_status(metric.get("liquidity"))
+            metric_statuses.extend(
+                [
+                    ebitda_interest_cover_status,
+                    debt_ebitda_status,
+                    ffo_debt_status,
+                    loan_value_status,
+                    focf_debt_status,
+                    liquidity_status,
+                ]
+            )
 
             scope_credit_metrics.append(
                 schema.ScopeCreditMetricSchema(
@@ -148,6 +226,17 @@ def validate_data(data: dict, version: str, file_path: str) -> schema.IngestionS
             scope_credit_metrics=scope_credit_metrics,
         )
 
-        return validated_data
+        industry_weights = [
+            float(risk.get("industry_weight"))
+            for risk in data.get("industry_risks", [])
+            if not _is_missing(risk.get("industry_weight"))
+        ]
+        quality_report = _build_quality_report(
+            raw_data=data,
+            metric_statuses=metric_statuses,
+            industry_weights=industry_weights,
+        )
+
+        return validated_data, quality_report
     except Exception as e:
         raise ValueError(f"Validation failed for {file_path}: {e}") from e

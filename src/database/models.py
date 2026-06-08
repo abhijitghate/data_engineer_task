@@ -302,3 +302,72 @@ class ScopeCreditMetric(Base):
     liquidity = Column(Numeric(10, 4))
     liquidity_status = Column(String, server_default=text("'numeric'"), nullable=False)
     snapshot = relationship("CompanySnapshot", back_populates="scope_credit_metrics")
+
+
+class PipelineRun(Base):
+    __tablename__ = "pipeline_runs"
+    __table_args__ = {"schema": "warehouse"}
+
+    run_id = Column(Integer, primary_key=True, index=True)
+    discussion_version = Column(String, nullable=False)
+    started_at = Column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        nullable=False,
+    )
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String, server_default=text("'running'"), nullable=False)
+    files_total = Column(Integer, server_default=text("0"), nullable=False)
+    files_processed = Column(Integer, server_default=text("0"), nullable=False)
+    files_succeeded = Column(Integer, server_default=text("0"), nullable=False)
+    files_failed = Column(Integer, server_default=text("0"), nullable=False)
+    files_skipped = Column(Integer, server_default=text("0"), nullable=False)
+    quality_completeness_avg = Column(Numeric(6, 4), nullable=True)
+    quality_validity_avg = Column(Numeric(6, 4), nullable=True)
+    quality_warning_count = Column(Integer, server_default=text("0"), nullable=False)
+    extract_ms_total = Column(Integer, server_default=text("0"), nullable=False)
+    validate_ms_total = Column(Integer, server_default=text("0"), nullable=False)
+    transform_ms_total = Column(Integer, server_default=text("0"), nullable=False)
+    load_ms_total = Column(Integer, server_default=text("0"), nullable=False)
+    duration_ms = Column(Integer, nullable=True)
+    error_summary = Column(String, nullable=True)
+    processed_files = relationship("ProcessedFile", back_populates="run")
+
+
+class ProcessedFile(Base):
+    __tablename__ = "processed_files"
+    __table_args__ = {"schema": "warehouse"}
+
+    processed_file_id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(
+        Integer,
+        ForeignKey("warehouse.pipeline_runs.run_id"),
+        nullable=False,
+        index=True,
+    )
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_checksum = Column(String, nullable=False, index=True)
+    discussion_version = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False)
+    upload_id = Column(Integer, nullable=True)
+    company_id = Column(Integer, nullable=True)
+    company_version_id = Column(Integer, nullable=True)
+    snapshot_id = Column(Integer, nullable=True)
+    quality_completeness_rate = Column(Numeric(6, 4), nullable=True)
+    quality_validity_rate = Column(Numeric(6, 4), nullable=True)
+    quality_warning_count = Column(Integer, nullable=True)
+    quality_warnings = Column(String, nullable=True)
+    extract_ms = Column(Integer, nullable=True)
+    validate_ms = Column(Integer, nullable=True)
+    transform_ms = Column(Integer, nullable=True)
+    load_ms = Column(Integer, nullable=True)
+    total_ms = Column(Integer, nullable=True)
+    error_message = Column(String, nullable=True)
+    processed_at = Column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        nullable=False,
+    )
+
+    run = relationship("PipelineRun", back_populates="processed_files")
