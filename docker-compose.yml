@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -12,37 +10,69 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U scope_admin -d scope_ratings"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  migrate:
+    build: .
+    container_name: scope_migrate
+    command: alembic upgrade head
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - PYTHONPATH=/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build: .
     container_name: scope_api
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn src.application.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     volumes:
       - .:/app
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - PYTHONPATH=/app
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   pipeline:
     build: .
     container_name: scope_pipeline
-    command: python src/pipeline/pipeline.py
+    command: sh -c "python -m src.pipeline.pipeline ${PIPELINE_ARGS:-}"
     volumes:
       - .:/app
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - PYTHONPATH=/app
     depends_on:
       postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      api:
         condition: service_healthy
 
 volumes:

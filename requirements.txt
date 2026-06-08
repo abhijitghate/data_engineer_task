@@ -7,3 +7,4 @@ openpyxl==3.1.4
 pydantic>=2.10,<3
 python-dotenv==1.0.1
 pydantic_settings
+alembic==1.13.2

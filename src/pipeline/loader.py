@@ -12,6 +12,47 @@ from src.pipeline.transformer import (
 )
 
 
+def _get_upload_by_checksum(db: Session, file_checksum: str) -> models.UploadLog | None:
+    return (
+        db.query(models.UploadLog)
+        .filter(models.UploadLog.file_checksum == file_checksum)
+        .first()
+    )
+
+
+def _get_latest_snapshot_for_upload(
+    db: Session, upload_id: int
+) -> models.CompanySnapshot | None:
+    return (
+        db.query(models.CompanySnapshot)
+        .filter(models.CompanySnapshot.upload_id == upload_id)
+        .order_by(models.CompanySnapshot.snapshot_id.desc())
+        .first()
+    )
+
+
+def _invalidate_latest_snapshot_for_company(
+    db: Session, company_id: int, closed_at: datetime
+) -> None:
+    latest_snapshot = (
+        db.query(models.CompanySnapshot)
+        .join(
+            models.Company,
+            models.Company.company_version_id == models.CompanySnapshot.company_version_id,
+        )
+        .filter(models.Company.company_id == company_id)
+        .order_by(
+            models.CompanySnapshot.ingested_at.desc(),
+            models.CompanySnapshot.snapshot_id.desc(),
+        )
+        .first()
+    )
+    if latest_snapshot is None:
+        return
+
+    latest_snapshot.valid_to = closed_at
+
+
 def _get_or_create_dimension(
     db: Session,
     model: Type,
@@ -131,6 +172,28 @@ def load_db_ready_data(
     db_ready_data: DBReadyData,
 ) -> dict:
     with db.begin():
+        existing_upload = _get_upload_by_checksum(
+            db, db_ready_data["upload_log"]["file_checksum"]
+        )
+        if existing_upload is not None:
+            existing_snapshot = _get_latest_snapshot_for_upload(db, existing_upload.upload_id)
+            if existing_snapshot is not None:
+                existing_company = (
+                    db.query(models.Company)
+                    .filter(
+                        models.Company.company_version_id
+                        == existing_snapshot.company_version_id
+                    )
+                    .first()
+                )
+                return {
+                    "upload_id": existing_upload.upload_id,
+                    "company_id": existing_company.company_id if existing_company else None,
+                    "company_version_id": existing_snapshot.company_version_id,
+                    "snapshot_id": existing_snapshot.snapshot_id,
+                    "idempotency_skipped": True,
+                }
+
         company_id = _resolve_or_allocate_company_id(
             db, db_ready_data["company"]["company_name"]
         )
@@ -203,6 +266,9 @@ def load_db_ready_data(
             **resolved_for_company,
             "company_version_id": company_version_id,
         }
+        _invalidate_latest_snapshot_for_company(
+            db, company_id=company_id, closed_at=datetime.now(timezone.utc)
+        )
         snapshot_insert_payload = build_insert_ready_data(
             db_ready_data, resolved_for_snapshot
         )["snapshot"]
