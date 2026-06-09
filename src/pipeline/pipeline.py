@@ -319,6 +319,11 @@ if __name__ == "__main__":
     run_id = _create_pipeline_run(
         files_total=len(files_to_load), discussion_version=args.version
     )
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    run_log_path = reports_dir / f"pipeline_run_{run_id}.log"
+    # Persist logs to a dedicated text file for every pipeline run.
+    configure_logging(log_file_path=str(run_log_path))
     set_log_context(run_id=run_id)
     LOGGER.info(
         "pipeline_run_started",
@@ -537,7 +542,11 @@ if __name__ == "__main__":
     set_log_context(run_id=run_id)
     LOGGER.info(
         "quality_artifact_written",
-        extra={"event": "quality_artifact_written", "artifact_path": str(artifact_path)},
+        extra={
+            "event": "quality_artifact_written",
+            "artifact_path": str(artifact_path),
+            "run_log_path": str(run_log_path),
+        },
     )
 
     if files_failed == 0:

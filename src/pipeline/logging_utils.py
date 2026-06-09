@@ -65,21 +65,28 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
-def configure_logging() -> None:
+def configure_logging(log_file_path: str | None = None) -> None:
     level = os.getenv("LOG_LEVEL", "INFO").upper()
     log_format = os.getenv("LOG_FORMAT", "json").lower()
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
     root_logger.handlers.clear()
 
-    handler = logging.StreamHandler()
     if log_format == "json":
-        handler.setFormatter(JsonFormatter())
+        formatter: logging.Formatter = JsonFormatter()
     else:
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+        formatter = logging.Formatter(
+            "%(asctime)s %(levelname)s [%(name)s] %(message)s"
         )
-    root_logger.addHandler(handler)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    root_logger.addHandler(stream_handler)
+
+    if log_file_path:
+        file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
 
 
 def set_log_context(

@@ -1,0 +1,97 @@
+{
+  "run_id": 1,
+  "discussion_version": "v1",
+  "summary": {
+    "files_total": 4,
+    "files_processed": 4,
+    "files_succeeded": 4,
+    "files_failed": 0,
+    "files_skipped": 0,
+    "quality_completeness_avg": 1.0,
+    "quality_validity_avg": 1.0,
+    "quality_warning_count": 0,
+    "duration_ms": 272
+  },
+  "files": [
+    {
+      "file_path": "data/corporates_A_1.xlsm",
+      "status": "success",
+      "quality_report": {
+        "completeness_rate": 1.0,
+        "validity_rate": 1.0,
+        "warning_count": 0,
+        "missing_required_fields": [],
+        "invalid_metric_values": 0,
+        "total_metric_values": 60,
+        "warnings": []
+      },
+      "timings": {
+        "extract_ms": 67,
+        "validate_ms": 0,
+        "transform_ms": 0,
+        "load_ms": 30,
+        "total_ms": 98
+      }
+    },
+    {
+      "file_path": "data/corporates_A_2.xlsm",
+      "status": "success",
+      "quality_report": {
+        "completeness_rate": 1.0,
+        "validity_rate": 1.0,
+        "warning_count": 0,
+        "missing_required_fields": [],
+        "invalid_metric_values": 0,
+        "total_metric_values": 60,
+        "warnings": []
+      },
+      "timings": {
+        "extract_ms": 19,
+        "validate_ms": 0,
+        "transform_ms": 0,
+        "load_ms": 17,
+        "total_ms": 37
+      }
+    },
+    {
+      "file_path": "data/corporates_B_1.xlsm",
+      "status": "success",
+      "quality_report": {
+        "completeness_rate": 1.0,
+        "validity_rate": 1.0,
+        "warning_count": 0,
+        "missing_required_fields": [],
+        "invalid_metric_values": 0,
+        "total_metric_values": 60,
+        "warnings": []
+      },
+      "timings": {
+        "extract_ms": 17,
+        "validate_ms": 0,
+        "transform_ms": 0,
+        "load_ms": 25,
+        "total_ms": 43
+      }
+    },
+    {
+      "file_path": "data/corporates_B_2.xlsm",
+      "status": "success",
+      "quality_report": {
+        "completeness_rate": 1.0,
+        "validity_rate": 1.0,
+        "warning_count": 0,
+        "missing_required_fields": [],
+        "invalid_metric_values": 0,
+        "total_metric_values": 60,
+        "warnings": []
+      },
+      "timings": {
+        "extract_ms": 16,
+        "validate_ms": 0,
+        "transform_ms": 0,
+        "load_ms": 17,
+        "total_ms": 34
+      }
+    }
+  ]
+}
