@@ -83,6 +83,12 @@ Your task is to build a data platform that enables:
 - Flag missing or suspicious values
 - Report on data quality metrics (completeness, validity rates)
 
+**Documentation (README, comments):**
+- Maintain an up-to-date README with architecture, setup, run commands, and endpoint usage examples.
+- Document ETL stage responsibilities and data flow (Extract -> Validate -> Transform -> Load).
+- Add concise comments where logic is non-obvious (validation/status normalization, idempotency, temporal updates).
+- Keep AI usage disclosure current in `AI_USAGE.md`, including component-level assistance and interaction logs.
+
 ### 4. API Development with FastAPI
 **Challenges:**
 - Design RESTful endpoints for complex analytical queries
