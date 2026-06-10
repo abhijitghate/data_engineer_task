@@ -19,7 +19,7 @@ from src.pipeline.logging_utils import (
 )
 from src.pipeline.parser import parse_excel_master
 from src.pipeline.transformer import transform_to_db_ready
-from src.pipeline.validator import DataQualityReport, validate_data
+from src.pipeline.validator import DataQualityFinding, DataQualityReport, validate_data
 
 DEFAULT_INPUT_FILES = [
     "data/corporates_A_1.xlsm",
@@ -164,9 +164,14 @@ def _record_processed_file(
     company_version_id: int | None = None,
     snapshot_id: int | None = None,
     error_message: str | None = None,
+    findings: list[DataQualityFinding] | None = None,
 ) -> None:
     db = SessionLocal()
     try:
+        quality_findings = findings or []
+        warning_messages = [
+            item["message"] for item in quality_findings if item["severity"] == "warning"
+        ]
         row = models.ProcessedFile(
             run_id=run_id,
             file_name=Path(file_path).name,
@@ -184,7 +189,7 @@ def _record_processed_file(
             quality_validity_rate=quality_report["validity_rate"] if quality_report else None,
             quality_warning_count=quality_report["warning_count"] if quality_report else None,
             quality_warnings=(
-                " | ".join(quality_report["warnings"])[:1900] if quality_report else None
+                " | ".join(warning_messages)[:1900] if warning_messages else None
             ),
             extract_ms=timings["extract_ms"] if timings else None,
             validate_ms=timings["validate_ms"] if timings else None,
@@ -194,6 +199,22 @@ def _record_processed_file(
             error_message=error_message,
         )
         db.add(row)
+        db.flush()
+
+        for finding in quality_findings:
+            db.add(
+                models.ValidationFinding(
+                    processed_file_id=row.processed_file_id,
+                    run_id=run_id,
+                    file_name=Path(file_path).name,
+                    file_checksum=file_checksum,
+                    discussion_version=discussion_version,
+                    rule_id=finding["rule_id"],
+                    severity=finding["severity"],
+                    field_name=finding["field"],
+                    message=finding["message"][:1900],
+                )
+            )
         db.commit()
     finally:
         db.close()
@@ -429,6 +450,7 @@ if __name__ == "__main__":
                 company_id=result.get("company_id"),
                 company_version_id=result.get("company_version_id"),
                 snapshot_id=result.get("snapshot_id"),
+                findings=quality_report["findings"],
             )
             LOGGER.info(
                 "file_processed",

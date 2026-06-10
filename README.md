@@ -1,243 +1,296 @@
-# Senior Data Engineer Assignment - Corporate Credit Rating Data Pipeline
+# Corporate Credit Rating Data Pipeline - Solution README
 
-## Overview
-Build a production-ready data pipeline that extracts corporate metadata from the MASTER sheet of Excel files, models it in a dimensional warehouse with temporal tracking, and exposes it through a RESTful API. The entire solution must be containerized using Docker Compose.
+## 1. What This Project Delivers
 
-## Scenario
-You work for a credit rating analytics firm (similar to S&P, Moody's, Fitch). Analysts upload Excel-based rating assessments for corporate entities. Each Excel file contains multiple sheets, but **you only need to extract the MASTER sheet**, which contains:
-- Company metadata (entity name, sector, country, currency)
-- Rating methodology information
-- Industry risk scores and weights
-- Accounting principles and business year-end data
+This implementation builds a production-style data platform for corporate credit rating submissions stored in Excel `.xlsm` files.
 
-The MASTER sheet has a non-standard structure (key-value pairs with "Unnamed" column headers) that requires custom parsing.
+It provides:
+- Custom extraction from the `MASTER` sheet only.
+- ETL orchestration with stages: Extract -> Validate -> Transform -> Load.
+- Dimensional warehouse model with temporal tracking for companies and snapshots.
+- Incremental + idempotent ingestion behavior.
+- Data quality reporting and rule-level validation findings.
+- Read-focused REST API for analytics and BI consumption.
+- Containerized execution with Docker Compose.
 
-Your task is to build a data platform that enables:
-- Historical tracking of all rating submissions (requirement #1)
-- Point-in-time company comparisons (requirement #2)
-- Time-series analysis of individual companies (requirement #3)
-- Version control for multiple uploads per company/discussion (requirement #4)
-- Data classification for countries, company names, currencies (requirement #5)
-- Time-series data availability (requirement #6)
-- Data validation (requirement #7)
-- BI tool integration (requirement #8)
+## 2. Repository Layout
 
-## Task Breakdown
+```text
+src/
+  application/
+    routers/        # FastAPI route handlers
+    services/       # business/service logic
+    repositories/   # SQLAlchemy read queries against serving views/tables
+    schemas/        # API response models
+  pipeline/
+    parser.py       # MASTER sheet extraction
+    validator.py    # validation + quality findings
+    transformer.py  # validated payload -> DB-ready payload
+    loader.py       # transactional persistence + temporal updates
+    pipeline.py     # orchestration, retry, run tracking, artifacts
+  database/
+    models.py       # SQLAlchemy ORM models
+    schemas.py      # ingestion/validation Pydantic models
 
-### 1. Data Extraction & Ingestion
-**Challenges:**
-- Extract data from .xlsm files (Excel with macros) - **MASTER sheet only**
-- Handle non-standard headers (many "Unnamed: X" columns requiring custom parsing)
-- MASTER sheet has key-value pair structure (40 rows × 13 columns)
-- Column headers are "Unnamed: 0-12", actual labels in column 1, values in column 2
-- Preserve file-level metadata (upload timestamp, source filename, version info)
+alembic/versions/   # schema + view migrations
+reports/            # generated pipeline log + quality artifacts
+docs/curl_sections/ # endpoint examples with sample responses
+```
 
-**Requirements:**
-- Create extraction module that handles MASTER sheet from each file
-- Implement custom parsing for key-value pair structure (not standard table format)
-- Extract company metadata:
-  - Rated entity name
-  - Corporate sector classification
-  - Rating methodologies applied
-  - Industry risk scores and weights
-  - Currency, country, accounting principles
-  - Business year-end month
-- Generate data quality reports per file (missing fields, invalid values)
-- Track data lineage (source file → extracted data → database table)
+## 3. Architecture Overview
 
-**Business Context:**
-- Files: corporates_A_1.xlsm, corporates_A_2.xlsm, corporates_B_1.xlsm, corporates_B_2.xlsm
-- A_1 vs A_2: Same company, different versions (industry risk A → BBB)
-- B_1 vs B_2: Same company, different versions (weight changes)
-- Only MASTER sheet needs to be extracted per file
+### 3.1 Data Flow
 
-### 2. Data Modeling & Warehouse Design
-**Challenges:**
-- Design dimensional model for corporate metadata tracking
-- Implement temporal tracking (point-in-time + time-series)
-- Handle version control for multiple uploads per company/discussion
-- Model multi-currency data (EUR, CHF)
-- Handle slowly changing dimensions for company metadata
+1. Parse input files from `data/*.xlsm` and read only `MASTER` sheet.
+2. Validate payload fields, normalize values, and produce rule-level findings.
+3. Transform validated object graph into DB-ready natural-key payloads.
+4. Load transactionally into warehouse dimensions/facts/bridges.
+5. Record pipeline run and per-file processing state.
+6. Expose read models via FastAPI endpoints backed by serving views.
+
+### 3.2 Runtime Components
+
+Docker services:
+- `postgres` -> warehouse storage
+- `migrate` -> Alembic migration runner
+- `api` -> FastAPI app on port `8000`
+- `pipeline` -> ETL runner (CLI-driven)
+- `test` -> DB-backed integration test profile
+
+## 4. Key Design Decisions
+
+### 4.1 Dimensional + Temporal Model
+
+- `warehouse.dimension_companies` stores company versions (`company_version_id`) with:
+  - `valid_from`, `valid_to`, `is_current`
+- `warehouse.fact_company_snapshots` stores point-in-time submissions per upload.
+- `warehouse.fact_scope_credit_metrics` stores time-series metric rows by `metric_year`.
+- Bridge tables model many-to-many relationships for methodologies and industry risks.
+
+Reasoning:
+- Enables both "latest state" and "as-of" analytics.
+- Supports re-submissions and historical comparison without destructive updates.
+
+### 4.2 Idempotency + Incremental Loading
+
+- SHA-256 file checksum computed per file.
+- Short-circuit if checksum already ingested (idempotent behavior).
+- `processed_files` table tracks per-run/per-file status and prevents redundant work.
+
+Reasoning:
+- Safe re-runs and reduced duplicate processing.
+
+### 4.3 Serving Views for BI/API
+
+Views in `applicationdatabase` provide stable read surfaces:
+- `v_company_current_metadata`
+- `v_company_versions`
+- `v_company_snapshots_enriched`
+- `v_company_metric_history`
+- `v_upload_stats`
+
+Reasoning:
+- Keeps API/read concerns decoupled from raw warehouse joins.
+
+### 4.4 Validation-as-Policy
+
+Validation now emits structured findings with:
+- `rule_id`
+- `severity` (`error` or `warning`)
+- `field`
+- `message`
+
+Error-level findings fail ingestion for that file.
+Warning-level findings are retained for quality visibility.
+
+## 5. Validation Framework Details
+
+Validation is implemented in `src/pipeline/validator.py`.
+
+### 5.1 Rule Coverage
+
+Implemented checks include:
+- Required fields present.
+- Currency format validation (`[A-Z]{3}`).
+- Business month normalization/validation.
+- `metric_year` format/range validation (`1900`-`2100`).
+- Duplicate detection:
+  - rating methodologies
+  - industry risk names
+  - metric years
+- Industry weight policy:
+  - warning if near threshold mismatch
+  - error if materially far from `1.0000`
+- Metric status/value consistency:
+  - `numeric` status requires non-null value
+  - non-`numeric` status requires null value
+- Suspicious value warnings for rating-scale fields outside known domain.
+
+### 5.2 Quality Outputs
+
+Per-file quality report includes:
+- completeness rate
+- validity rate
+- warning count
+- error count
+- missing required fields
+- invalid metric value count
+- rule-level findings list
+
+Run-level quality artifacts are saved as:
+- `reports/quality_run_<run_id>.json`
+
+### 5.3 Validation Lineage Persistence
+
+Rule-level findings are persisted in:
+- `warehouse.validation_findings`
+
+This table stores run/file metadata with rule details for auditability and BI slicing.
+
+## 6. API Endpoints
+
+### 6.1 Health
+- `GET /health`
+
+### 6.2 Companies
+- `GET /companies`
+- `GET /companies/{company_id}`
+- `GET /companies/{company_id}/versions`
+- `GET /companies/{company_id}/history`
+- `GET /companies/compare?company_ids=1&company_ids=2&as_of_date=YYYY-MM-DD`
+
+### 6.3 Snapshots
+- `GET /snapshots`
+  - filters: `company_id`, `from_date`, `to_date`, `sector`, `country`, `currency`
+- `GET /snapshots/{snapshot_id}`
+- `GET /snapshots/latest`
+
+### 6.4 Upload Audit
+- `GET /uploads`
+- `GET /uploads/{upload_id}/details`
+- `GET /uploads/{upload_id}/file`
+- `GET /uploads/stats`
+
+### 6.5 Pipeline Observability
+- `GET /pipeline/runs`
+- `GET /pipeline/runs/{run_id}`
+- `GET /pipeline/runs/{run_id}/quality`
+
+For concrete request/response examples, see:
+- `docs/curl_sections/*.md`
+
+## 7. Setup and Run Commands
+
+### 7.1 Prerequisites
+
+- Docker + Docker Compose
+- (Optional local run) Python 3.11+
+
+### 7.2 Environment
+
+**This step is crucial**
+```bash
+cp .env.example .env
+# then edit .env secrets and connection strings
+```
+
+### 7.3 One-command Stack Startup
+
+```bash
+docker compose up
+```
+or detached mode 
+```bash
+docker compose up -d
+```
+
+This starts postgres, applies migrations, launches API, and can run pipeline via service command.
+
+### 7.4 Run Ingestion Pipeline
+
+Default bundled files:
+```bash
+docker compose run --rm pipeline
+```
+
+Custom version and retry settings:
+```bash
+docker compose run --rm \
+  -e PIPELINE_ARGS="--version v2 --max-retries 5 --backoff-seconds 1.5" \
+  pipeline
+```
+
+Custom file list:
+```bash
+docker compose run --rm \
+  -e PIPELINE_ARGS="--files data/corporates_A_1.xlsm data/corporates_B_2.xlsm --version v3" \
+  pipeline
+```
+
+### 7.5 API Access
+
+Open Swagger UI:
+- `http://localhost:8000/docs`
+
+Quick health check:
+```bash
+curl --location "http://localhost:8000/health"
+```
+
+### 7.6 Run Tests
+
+Inside compose (DB-backed integration tests):
+```bash
+docker compose --profile test run --rm test
+```
+
+Local unit/integration (non-DB):
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/unit
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/integration
+```
+
+Note: `tests/integration_db` expects the compose hostname/network (`postgres`).
+
+## 8. Pipeline Outputs and Monitoring
+
+Generated artifacts:
+- Pipeline logs: `reports/pipeline_run_<run_id>.log`
+- Quality artifact: `reports/quality_run_<run_id>.json`
+
+Warehouse observability tables:
+- `warehouse.pipeline_runs`
+- `warehouse.processed_files`
+- `warehouse.validation_findings`
+
+These support end-to-end lineage from file -> pipeline run -> validation findings -> warehouse rows.
+
+## 9. Migration Notes
+
+Ensure latest schema is applied:
+
+```bash
+docker compose run --rm migrate
+# or
+alembic upgrade head
+```
+
+Latest migration includes validation findings persistence.
+
+## 10. Known Constraints
+
+- Input parser is purpose-built for this MASTER sheet layout; upstream template drift may require parser rule updates.
+- DB-backed integration tests assume compose networking.
+- API is intentionally read-only (no upload endpoint), consistent with assignment non-goals.
+
+## 11. Deliverable Mapping
+
+Implemented deliverables:
+- Source repository with ETL + API + schema migrations.
+- Docker Compose setup with orchestration and health checks.
+- Sample outputs (`reports/*` and `docs/curl_sections/*`).
+- Unit and integration tests.
+- AI usage disclosure (`AI_USAGE.md`).
 
 
-### 3. Data Pipeline Orchestration
-**Challenges:**
-- Implement incremental loading (only process new/changed files)
-- Handle pipeline failures gracefully (transaction management)
-- Ensure idempotency (re-run same file → no duplicates)
-- Track pipeline execution state
-- Validate extracted data
-
-**Requirements:**
-- Create ETL pipeline with clear stages: Extract → Validate → Transform → Load
-- Implement **validation rules** (requirement #7)
-- Add retry logic with exponential backoff for transient failures
-- Log pipeline execution metrics (files processed, rows extracted, errors, duration)
-- Maintain pipeline state (last successful run, processed files list)
-- Generate data quality report per run (validation failures, warnings, summary stats)
-
-**Validation Framework:**
-- Check required fields are present
-- Validate data types (numeric, text, date)
-- Validate numeric ranges (weights sum to 1.0, scores in valid range)
-- Flag missing or suspicious values
-- Report on data quality metrics (completeness, validity rates)
-
-**Documentation (README, comments):**
-- Maintain an up-to-date README with architecture, setup, run commands, and endpoint usage examples.
-- Document ETL stage responsibilities and data flow (Extract -> Validate -> Transform -> Load).
-- Add concise comments where logic is non-obvious (validation/status normalization, idempotency, temporal updates).
-- Keep AI usage disclosure current in `AI_USAGE.md`, including component-level assistance and interaction logs.
-
-### 4. API Development with FastAPI
-**Challenges:**
-- Design RESTful endpoints for complex analytical queries
-- Support point-in-time queries (requirement #2)
-- Support time-series queries (requirement #6)
-- Handle version navigation (requirement #4)
-- Implement BI-friendly data access (requirement #8)
-
-**Requirements:**
-- **Company Endpoints:**
-  - GET /companies - List all companies with current metadata
-  - GET /companies/{company_id} - Get company details (latest version)
-  - GET /companies/{company_id}/versions - Get all versions for a company (requirement #4)
-  - GET /companies/{company_id}/history - Get time-series data for analysis (requirement #3)
-  - GET /companies/compare - Compare multiple companies at specific point in time (requirement #2)
-    - Query params: company_ids, as_of_date
-
-- **Snapshot Endpoints:**
-  - GET /snapshots - List all company snapshots with filters
-    - Query params: company_id, from_date, to_date, sector, country, currency
-  - GET /snapshots/{snapshot_id} - Get specific snapshot details
-  - GET /snapshots/latest - Get latest snapshot for each company
-
-- **Upload Audit Endpoints:**
-  - GET /uploads - List all file uploads with metadata (requirement #1)
-  - GET /uploads/{upload_id}/details - Get specific upload details
-  - GET /uploads/{upload_id}/file - Download original file (requirement #1)
-  - GET /uploads/stats - Upload statistics and metrics
-
-- **Technical:**
-  - Pydantic models for request/response validation
-  - OpenAPI/Swagger documentation
-  - Proper HTTP status codes and error messages
-
-### 5. Containerization & Infrastructure
-**Challenges:**
-- Multi-container orchestration with proper dependencies
-- Data persistence across container restarts
-- Environment configuration management
-- Health checks and startup order
-
-**Requirements:**
-- **Docker Compose** with services:
-  ```yaml
-  services:
-    postgres:
-      - PostgreSQL 15+ for data warehouse
-      - Initialize with schema on first run
-      - Volume for data persistence
-      - Health check endpoint
-
-    api:
-      - FastAPI application
-      - Depends on postgres health
-      - Volume mount for data files
-      - Environment variables for config
-      - Exposed on port 8000
-  ```
-
-- **One-command startup:**
-  ```bash
-  docker-compose up -d
-  ```
-
-## Requirements & Evaluation Criteria
-
-### 1. Data Engineering
-- Robust Excel extraction with non-standard header handling
-- Efficient data management
-- Comprehensive data quality checks and reporting
-- Data lineage tracking from source to warehouse
-- Proper error handling and logging
-
-### 2. Data Modeling & System Design
-- Well-designed dimensional model (star schema)
-- Version control strategy for multiple uploads
-- Appropriate indexing and partitioning
-- Meets all 8 business requirements from Requirements sheet
-
-### 3. Pipeline Orchestration
-- Validation framework
-- State management (tracking processed files)
-- Comprehensive error handling and retry logic
-- Data quality reporting
-- Monitoring and logging
-
-### 4. API Design & Implementation
-- Clean RESTful API design
-- Point-in-time and time-series query support
-- Complex filtering and aggregation
-- BI-friendly data access
-- Proper validation and error handling
-- Complete OpenAPI documentation
-
-### 5. Infrastructure & Containerization
-- Working Docker Compose with all services
-- Proper service orchestration and dependencies
-- Data persistence configuration
-- Health checks implemented
-- Environment variable management
-- One-command startup
-
-### 6. Code Quality (Qualitative)
-- Clean architecture (separation of concerns)
-- Type hints throughout
-- Unit and integration tests
-- Logging and monitoring
-- Code documentation
-
-## Deliverables
-
-1. **Source Code Repository**
-
-2. **Docker Compose Setup**
-
-3. **Sample Outputs**
-   - At least 10 API call examples with responses
-   - Data quality report example
-   - Pipeline execution log example
-
-4. **Tests**
-
-7. **AI Usage Disclosure** (REQUIRED)
-   - Create AI_USAGE.md documenting:
-     - Which AI tools used (ChatGPT, Claude, Copilot, etc.)
-     - Which components received AI assistance
-     - Chat logs/screenshots (can redact personal info)
-
-## Tech Stack
-
-**Required:**
-- Python 3.10+
-- FastAPI (web framework)
-- PostgreSQL (data warehouse)
-- Docker & Docker Compose
-- SQLAlchemy (ORM) or raw SQL
-
-
-## Non-Goals
-
-You do NOT need to:
-- Build a frontend UI (focus on API only)
-- Implement authentication/authorization
-- Deploy to cloud (AWS/Azure/GCP)
-- Implement real-time streaming
-- Handle production monitoring at scale
-- Support Excel file uploads via API (files provided in data/ directory)
-
-
-## Task Timeline
-
-Complete within **5-7 days**.
+___

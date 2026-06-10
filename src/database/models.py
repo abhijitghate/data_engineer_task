@@ -371,3 +371,34 @@ class ProcessedFile(Base):
     )
 
     run = relationship("PipelineRun", back_populates="processed_files")
+    validation_findings = relationship(
+        "ValidationFinding", back_populates="processed_file"
+    )
+
+
+class ValidationFinding(Base):
+    __tablename__ = "validation_findings"
+    __table_args__ = {"schema": "warehouse"}
+
+    validation_finding_id = Column(Integer, primary_key=True, index=True)
+    processed_file_id = Column(
+        Integer,
+        ForeignKey("warehouse.processed_files.processed_file_id"),
+        nullable=False,
+        index=True,
+    )
+    run_id = Column(Integer, nullable=False, index=True)
+    file_name = Column(String, nullable=False)
+    file_checksum = Column(String, nullable=False, index=True)
+    discussion_version = Column(String, nullable=False, index=True)
+    rule_id = Column(String, nullable=False)
+    severity = Column(String, nullable=False)
+    field_name = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        nullable=False,
+    )
+
+    processed_file = relationship("ProcessedFile", back_populates="validation_findings")
